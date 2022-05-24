@@ -14,10 +14,43 @@ private:
     int M;
 
 public:
-    Dotp(long N_ = 10000, int M_ = 1) : X(new double[N_]), Y(new double[N_]),dotp(0), N(N_), M(M_) 
+    Dotp(long N_ = 10000, int M_ = 1) : X(new double[N_]), Y(new double[N_]), dotp(0), N(N_), M(M_) 
     {
+        /* Need to use: unstructured data lifetimes
+            - use of "data" word to identifie strat and end of data lifetime
+            - with "data" only: create and copyin works
+            - the "exit data" directive accepts: copyout and delete data clauses
+        */
         #pragma acc enter data create(this)
         #pragma acc enter data create(X[:N], Y[:N], dotp)
+
+
+        /* #pragma acc data create(X[:N], Y[:N], dotp)
+        {
+            #pragma acc parallel loop
+            for(long i(0); i<N; ++i){
+                X[i] = 1.;
+                Y[i] = 1.;
+            }
+
+            // #pragma acc data present(X[:N], Y[:N], dotp)
+            #pragma acc parallel loop reduction(+:dotp)
+            for(long i(0); i<N; ++i){
+                // dotp += X[i]*Y[i];
+                dotp += 1;
+            }
+
+            // #pragma acc update self(dotp)
+        }
+        cout << dotp << endl; */
+
+        // auto begin = std::chrono::high_resolution_clock::now();  
+
+        // auto end = std::chrono::high_resolution_clock::now();
+        // auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+    
+        // cout << "   time: " << elapsed.count()/1000.0 << endl;
+
     }
 
     ~Dotp(){
@@ -35,7 +68,7 @@ public:
 
 void Dotp::Init(int init_){
     
-    #pragma acc parallel loop present(X[N], Y[N])
+    #pragma acc parallel loop present(X[:N], Y[:N])
     for(long i(0); i<N; ++i){
         X[i] = 1.;
         Y[i] = 1.;
@@ -66,16 +99,23 @@ void Dotp::Init(int init_){
 
 double Dotp::Compute(){
 
-    for(int j(0); j<M; ++j){
+    #pragma acc data present(X[:N], Y[:N], dotp)
+    #pragma acc parallel loop reduction(+:dotp)
+    for(long i(0); i<N; ++i){
+        dotp += X[i]*Y[i];
+    }
+
+    /* for(int j(0); j<M; ++j){
 
         #pragma acc data present(X[:N], Y[:N], dotp)
         #pragma acc parallel loop reduction(+:dotp)
         for(long i(0); i<N; ++i){
             dotp += X[i]*Y[i];
         }
-    }
+    } */
     
-    #pragma acc update self(dotp) // *3 dans le temps de computation.. mais change pas le résultat
+    // #pragma acc update self(dotp) // *3 dans le temps de computation.. mais change pas le résultat
+    cout << dotp << endl;
     return dotp;
 }
 
