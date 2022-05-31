@@ -1,0 +1,231 @@
+#include <iostream>
+#include <vector>
+#include <array>
+#include <cmath>
+#include <string>
+#include <fstream>
+#include <ctime>
+#include <chrono>
+
+using namespace std ;
+
+#define EMAT double mat[3][3] // Cas 3D
+
+class Mesh
+{
+public :
+  Mesh(const string & fname);
+  ~Mesh();
+
+  void print(ostream & os=cout,int decal=1);
+  void write(const string & fname);
+  void read(const string & fname);
+
+  double volume();
+  void volumesE(vector<double> & volE);
+  void volumesN(vector<double> & volN);
+  void volumesNavg(vector<double> & volN);
+
+  double determinant(double mat) const;
+  double determinant(double mat[2][2]) const;
+  double determinant(double mat[3][3]) const;
+
+  int d,D ; 
+  int nbn,nbe ;
+  vector<double> X ;
+  vector<int> T ;
+
+  // Pointeurs sur nos tableaux CPU pout utilisation GPU
+  double *restrict pX; 
+  size_t tX;
+  int *restrict pT; 
+  size_t tT;
+
+  const array<double,6> OneOverFact;
+};
+
+Mesh::Mesh(const string & fname) : OneOverFact({1.0, 1.0, 0.5, 1.0/6.0, 1.0/24.0, 1.0/120.0})
+{
+  auto ext = fname.substr(fname.find_last_of("."));
+  if(ext == ".t") // Si .t parsing des arguments
+  {
+    ifstream is(fname);
+    is >> nbn >> d >> nbe >> D ;
+    X.resize(nbn*d);
+    for(int i=0;i<X.size();i++)
+      is >> X[i] ;
+    T.resize(nbe*D);
+    for(int i=0;i<T.size();i++)
+      is >> T[i] ;
+
+    for(int i=0;i<T.size();i++)
+      T[i]--;
+    while(T[D*nbe-1]==-1 && nbe>=0)
+      nbe-- ;
+    T.resize(nbe*D);
+  }
+  else if(ext==".tb") // Si .tb (binaire) pas de parsing
+   this->read(fname);
+
+  pX = &X[0]; 
+  tX = X.size();
+  pT = &T[0]; 
+  tT = T.size();
+
+  /* Making the copy of the entire mesh entity from the cpu to the gpu */
+  #pragma acc enter data copyin(this)
+  #pragma acc enter data copyin(pT[:tT], pX[:tX])
+}
+
+Mesh::~Mesh(){
+  /* Deleting the mesh entity on the gpu */
+  #pragma acc exit data delete(this)
+  #pragma acc exit data delete(pT[:tT], pX[:tX])
+}
+
+void Mesh::print(ostream & os,int decal)
+{
+  os << nbn << " " << d << " " << nbe << " " << D << endl;
+  for(int i=0;i<nbn;i++)
+  {
+    for(int j=0;j<d;j++)
+      cout << X[i*d+j] << " ";
+    cout << endl;
+  }
+  for(int i=0;i<nbe;i++)
+  {
+    for(int j=0;j<D;j++)
+      cout << T[i*D+j]+decal << " ";
+    cout << endl;
+  }
+}
+
+void Mesh::write(const string & fname)
+{
+  ofstream os(fname,ios::binary);
+  array<int,4> header ;
+  header[0]=d;
+  header[1]=D;
+  header[2]=nbn;
+  header[3]=nbe;
+  os.write(reinterpret_cast<char*>(&(header[0])),sizeof(header));
+  os.write(reinterpret_cast<char*>(&(X[0])),X.size()*sizeof(double));
+  os.write(reinterpret_cast<char*>(&(T[0])),T.size()*sizeof(int));
+}
+
+void Mesh::read(const string & fname)
+{
+  ifstream is(fname,ios::binary);
+  array<int,4> header ;
+  is.read(reinterpret_cast<char*>(&(header[0])),sizeof(header));
+  d = header[0] ;
+  D = header[1] ;
+  nbn= header[2] ;
+  nbe = header[3] ;
+  X.resize(nbn*d);
+  is.read(reinterpret_cast<char*>(&(X[0])),X.size()*sizeof(double));
+  T.resize(nbe*D);
+  is.read(reinterpret_cast<char*>(&(T[0])),T.size()*sizeof(int));
+}
+
+
+
+/* -------------------------------------------
+                  MESH::volume()
+   ------------------------------------------- */
+
+double Mesh::volume()  // Safe to paralelize such full independency is achieve here
+{
+    
+  double vol = 0.0 ; 
+
+  #pragma acc data present(pT[:tT], pX[:tX])
+  #pragma acc parallel loop reduction(+:vol)
+  for(int i=0;i<nbe;i++){
+
+    EMAT;
+
+    int iD = i*D ;
+    int n0 = pT[iD] ;
+    int n0d = n0*d ;
+
+    #pragma acc loop seq
+    for(int j=0;j<d;j++)
+    {
+      int n = pT[iD+j+1] ;
+      int nd = n*d ;
+
+      #pragma acc loop seq
+      for(int k=0;k<d;k++)
+        mat[j][k] = pX[nd+k]-pX[n0d+k] ;
+    }
+
+    vol += determinant(mat);
+  }
+
+  return vol ;
+}
+
+double Mesh::determinant(double mat) const{
+  // double const OneOverFact_3d(1);
+  return OneOverFact[1]*mat;
+}
+
+double Mesh::determinant(double mat[2][2]) const{
+  // double const OneOverFact_3d(1/2.);
+  return OneOverFact[2]*(mat[0][0]*mat[1][1]-mat[0][1]*mat[1][0]);
+}
+
+double Mesh::determinant(double mat[3][3]) const{
+  // double const OneOverFact_3d(1/6.);
+  return OneOverFact[3]*(mat[0][0]*mat[1][1]*mat[2][2] + mat[0][1]*mat[1][2]*mat[2][0] + mat[0][2]*mat[1][0]*mat[2][1] - mat[0][2]*mat[1][1]*mat[2][0] - mat[0][1]*mat[1][0]*mat[2][2] - mat[0][0]*mat[1][2]*mat[2][1]);
+}
+
+int main(int argc,char**argv)
+{
+  for(int i=0;i<argc;i++)
+    cout << argv[i] << " " ;
+  cout << endl;
+
+  int lvlOut = 0 ;
+  int M = 1 ;
+  string fname ;
+  for(int i=0;i<argc;i++)
+  {
+    if(argv[i]==string("-mesh"))
+      fname = argv[i+1];
+    if(argv[i]==string("-m"))
+      M = stol(argv[i+1]);
+    if(argv[i]==string("-out"))
+      lvlOut = stoi(argv[i+1]);
+  } 
+
+  Mesh m(fname);
+
+  if(lvlOut>1)
+  {
+    m.print();
+    
+    if(fname[fname.size()-1]=='t')
+      m.write(string(fname)+"b");
+  }
+
+
+  // Call and measurment of volume() methode.
+  auto begin = std::chrono::high_resolution_clock::now();  
+
+    double vol = 0.0 ;
+    for(int i=0;i<M;i++)
+      vol += m.volume() ;
+
+  auto end = std::chrono::high_resolution_clock::now();
+  auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+
+
+  cout << endl << "Mesh volule() computation:" << endl;
+  cout << "   time: " << elapsed.count()/1000000000.0 << " [s]" << endl;
+  cout << "   volume = " << vol << endl;
+
+  cout << endl << "completed." << endl;
+  return 0 ;
+}

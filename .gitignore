@@ -4,4 +4,4 @@
 *.vscode
 .vscode/
 Part2_mesh/meshs/mesh_complexes/*.t
-Part2_mesh/*
+# Part2_mesh/*
