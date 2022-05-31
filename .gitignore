@@ -1,0 +1,7 @@
+# ignore all compilation output files
+*.out
+*.o
+*.vscode
+.vscode/
+Part2_mesh/meshs/mesh_complexes/*.t
+Part2_mesh/*
