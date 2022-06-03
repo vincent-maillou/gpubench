@@ -10,6 +10,7 @@
 using namespace std ;
 
 #define EMAT double mat[3][3] // Cas 3D
+// #define EMAT double mat[2][2]
 
 class Mesh
 {
@@ -22,18 +23,18 @@ public :
   void read(const string & fname);
 
   double volume();
-  void volumesE(vector<double> & volE);
-  void volumesN(vector<double> & volN);
-  void volumesNavg(vector<double> & volN);
+  // void volumesE(vector<double> & volE);
+  void volumesN(double* , size_t);
+  // void volumesNavg(vector<double> & volN);
 
   double determinant(double mat) const;
   double determinant(double mat[2][2]) const;
   double determinant(double mat[3][3]) const;
 
-  int d,D ; 
-  int nbn,nbe ;
-  vector<double> X ;
-  vector<int> T ;
+  int d,D; 
+  int nbn,nbe;
+  vector<double> X;
+  vector<int> T;
 
   // Pointeurs sur nos tableaux CPU pout utilisation GPU
   double *restrict pX; 
@@ -81,6 +82,8 @@ Mesh::~Mesh(){
   /* Deleting the mesh entity on the gpu */
   #pragma acc exit data delete(this)
   #pragma acc exit data delete(pT[:tT], pX[:tX])
+
+  // #pragma acc exit data delete(pvolN[:tvolN])
 }
 
 void Mesh::print(ostream & os,int decal)
@@ -137,13 +140,59 @@ void Mesh::read(const string & fname)
 double Mesh::volume()  // Safe to paralelize such full independency is achieve here
 {
     
-  double vol = 0.0 ; 
+  double vol(0.0); 
 
   #pragma acc data present(pT[:tT], pX[:tX])
   #pragma acc parallel loop reduction(+:vol)
-  for(int i=0;i<nbe;i++){
+  for(int i(0); i<nbe; ++i){
 
     EMAT;
+
+    int iD = i*D ;
+    int n0 = pT[iD] ;
+    int n0d = n0*d ;
+
+    #pragma acc loop seq
+    for(int j(0); j<d; ++j)
+    {
+      int n = pT[iD+j+1] ;
+      int nd = n*d ;
+
+      #pragma acc loop seq
+      for(int k(0); k<d; ++k){
+        mat[j][k] = pX[nd+k]-pX[n0d+k];
+      }
+    }
+
+    vol += determinant(mat);
+  }
+
+  return vol ;
+}
+
+
+
+/* -------------------------------------------
+                  MESH::volumeN()
+   ------------------------------------------- */
+
+void Mesh::volumesN(double* pvolN, size_t tvolN)
+{
+
+  /* Initialisation du vecteur sur le GPU */
+  #pragma acc data present(pvolN[:tvolN])
+  #pragma acc parallel loop
+  for(int i(0); i<nbn; ++i){
+    pvolN[i] = 0;
+  }
+
+  #pragma acc data present(pT[:tT], pX[:tX], pvolN[:tvolN])
+  #pragma acc parallel loop
+  for(int i=0;i<nbe;i++)
+  {
+
+    double v(0.0);
+    EMAT ;
 
     int iD = i*D ;
     int n0 = pT[iD] ;
@@ -156,15 +205,27 @@ double Mesh::volume()  // Safe to paralelize such full independency is achieve h
       int nd = n*d ;
 
       #pragma acc loop seq
-      for(int k=0;k<d;k++)
-        mat[j][k] = pX[nd+k]-pX[n0d+k] ;
+      for(int k=0;k<d;k++){
+          mat[j][k] = pX[nd+k]-pX[n0d+k];
+      }
     }
 
-    vol += determinant(mat);
+    v = determinant(mat);
+    
+    #pragma acc loop seq
+    for(int j=0;j<D;j++){
+      #pragma acc atomic update
+      pvolN[pT[iD+j]] += v;
+    }
   }
 
-  return vol ;
 }
+
+
+
+/* -------------------------------------------
+                  MESH::utilities
+   ------------------------------------------- */
 
 double Mesh::determinant(double mat) const{
   // double const OneOverFact_3d(1);
@@ -180,6 +241,11 @@ double Mesh::determinant(double mat[3][3]) const{
   // double const OneOverFact_3d(1/6.);
   return OneOverFact[3]*(mat[0][0]*mat[1][1]*mat[2][2] + mat[0][1]*mat[1][2]*mat[2][0] + mat[0][2]*mat[1][0]*mat[2][1] - mat[0][2]*mat[1][1]*mat[2][0] - mat[0][1]*mat[1][0]*mat[2][2] - mat[0][0]*mat[1][2]*mat[2][1]);
 }
+
+
+/* -------------------------------------------
+                  MAIN
+   ------------------------------------------- */
 
 int main(int argc,char**argv)
 {
@@ -211,7 +277,11 @@ int main(int argc,char**argv)
   }
 
 
-  // Call and measurment of volume() methode.
+
+  /* -------------------------------------------
+              computation of volume()
+   ------------------------------------------- */
+
   auto begin = std::chrono::high_resolution_clock::now();  
 
     double vol = 0.0 ;
@@ -225,6 +295,48 @@ int main(int argc,char**argv)
   cout << endl << "Mesh volule() computation:" << endl;
   cout << "   time: " << elapsed.count()/1000000000.0 << " [s]" << endl;
   cout << "   volume = " << vol << endl;
+
+
+
+  /* -------------------------------------------
+              computation of volumeN()
+   ------------------------------------------- */
+
+  vector<double> volN(m.nbn);
+
+  double* pvolN(&volN[0]);
+  size_t tvolN(volN.size());
+
+  #pragma acc enter data create(pvolN[:tvolN])
+
+
+    begin = std::chrono::high_resolution_clock::now();  
+
+    for(int i=0;i<M;i++){
+      m.volumesN(pvolN, tvolN);
+    }
+
+    end = std::chrono::high_resolution_clock::now();
+    elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+
+    cout << endl << "Mesh voluleN() computation:" << endl;
+    cout << "   time: " << elapsed.count()/1000000000.0 << " [s]" << endl;
+
+    if(lvlOut == 1){
+      #pragma acc update self(pvolN[:tvolN])
+      for(auto elem : volN){
+        cout << elem << " ";
+      }
+
+      /* ofstream ofs("out.txt");
+      for(auto elem : volN){
+        ofs << elem << endl;
+      }  */   
+    }
+
+
+  #pragma acc exit data delete(pvolN[:tvolN])
+  
 
   cout << endl << "completed." << endl;
   return 0 ;

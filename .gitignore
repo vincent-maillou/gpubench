@@ -5,4 +5,5 @@
 .vscode/
 Part2_mesh/meshs/mesh_complexes/*.t
 # Part2_mesh/*
-.code-workspace
+*.code-workspace
+*.txt
