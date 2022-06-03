@@ -82,8 +82,6 @@ Mesh::~Mesh(){
   /* Deleting the mesh entity on the gpu */
   #pragma acc exit data delete(this)
   #pragma acc exit data delete(pT[:tT], pX[:tX])
-
-  // #pragma acc exit data delete(pvolN[:tvolN])
 }
 
 void Mesh::print(ostream & os,int decal)
@@ -228,17 +226,14 @@ void Mesh::volumesN(double* pvolN, size_t tvolN)
    ------------------------------------------- */
 
 double Mesh::determinant(double mat) const{
-  // double const OneOverFact_3d(1);
   return OneOverFact[1]*mat;
 }
 
 double Mesh::determinant(double mat[2][2]) const{
-  // double const OneOverFact_3d(1/2.);
   return OneOverFact[2]*(mat[0][0]*mat[1][1]-mat[0][1]*mat[1][0]);
 }
 
 double Mesh::determinant(double mat[3][3]) const{
-  // double const OneOverFact_3d(1/6.);
   return OneOverFact[3]*(mat[0][0]*mat[1][1]*mat[2][2] + mat[0][1]*mat[1][2]*mat[2][0] + mat[0][2]*mat[1][0]*mat[2][1] - mat[0][2]*mat[1][1]*mat[2][0] - mat[0][1]*mat[1][0]*mat[2][2] - mat[0][0]*mat[1][2]*mat[2][1]);
 }
 
