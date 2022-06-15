@@ -12,6 +12,21 @@ using namespace std ;
 #define EMAT double mat[3][3] // Cas 3D
 // #define EMAT double mat[2][2]
 
+/* TODO
+  - Implémenter volN [x]
+  - Vérifier volN pas cassé 2D [x]
+  - Vérifier volN pas cassé 3D [x]
+
+  - Implémenter volE [x]
+  - Vérifier exactitude volE 2D [x]
+  - Vérifier exactitude volE 3D [x]
+
+  - Implémenter volNAverage [x]
+  - Vérifier exactitude volNAverage 2D [x]
+  - Vérifier exactitude volNAverage 3D [x]  
+
+ */
+
 class Mesh
 {
 public :
@@ -23,9 +38,9 @@ public :
   void read(const string & fname);
 
   double volume();
-  // void volumesE(vector<double> & volE);
+  void volumesE(double* , size_t);
   void volumesN(double* , size_t);
-  // void volumesNavg(vector<double> & volN);
+  void volumesNavg(double* , size_t);
 
   double determinant(double mat) const;
   double determinant(double mat[2][2]) const;
@@ -171,7 +186,44 @@ double Mesh::volume()  // Safe to paralelize such full independency is achieve h
 
 
 /* -------------------------------------------
-                  MESH::volumeN()
+                  MESH::volumesE
+   ------------------------------------------- */
+
+void Mesh::volumesE(double* pvolE, size_t tvolE)
+{
+  
+  #pragma acc data present(pT[:tT], pX[:tX], pvolE[:tvolE])
+  #pragma acc parallel loop
+  for(int i=0;i<nbe;i++)
+  {
+
+    double v ;
+    EMAT ;
+
+    int iD = i*D ;
+    int n0 = pT[iD] ;
+    int n0d = n0*d ;
+
+    #pragma acc loop seq
+    for(int j(0); j<d; ++j)
+    {
+      int n = pT[iD+j+1];
+      int nd = n*d;
+
+      #pragma acc loop seq
+      for(int k(0); k<d; ++k)
+        mat[j][k] = pX[nd+k]-pX[n0d+k];
+    }
+
+    v = determinant(mat);
+    pvolE[i] = v;
+  }
+}
+
+
+
+/* -------------------------------------------
+                  MESH::volumesN()
    ------------------------------------------- */
 
 void Mesh::volumesN(double* pvolN, size_t tvolN)
@@ -181,7 +233,7 @@ void Mesh::volumesN(double* pvolN, size_t tvolN)
   #pragma acc data present(pvolN[:tvolN])
   #pragma acc parallel loop
   for(int i(0); i<nbn; ++i){
-    pvolN[i] = 0;
+    pvolN[i] = 0.;
   }
 
   #pragma acc data present(pT[:tT], pX[:tX], pvolN[:tvolN])
@@ -216,7 +268,81 @@ void Mesh::volumesN(double* pvolN, size_t tvolN)
       pvolN[pT[iD+j]] += v;
     }
   }
+}
 
+
+
+/* -------------------------------------------
+              MESH::volumesNavg()
+   ------------------------------------------- */
+
+void Mesh::volumesNavg(double* pvolNavg, size_t tvolNavg)
+{
+  vector<int> nbs(nbn);
+
+  int* pnbs(&nbs[0]);
+  size_t tnbs(nbs.size());
+
+  // Fill the nbs vector with "0"
+  #pragma acc enter data create(pnbs[:tnbs])
+  #pragma acc parallel loop
+  for(int i(0); i<nbn; ++i){
+    pnbs[i] = 0.;
+  }
+
+  /* Initialisation du vecteur sur le GPU */
+  #pragma acc data present(pvolNavg[:tvolNavg])
+  #pragma acc parallel loop
+  for(int i(0); i<nbn; ++i){
+    pvolNavg[i] = 0.;
+  }
+
+  #pragma acc data present(pT[:tT], pX[:tX], pvolNavg[:tvolNavg], pnbs[:tnbs])
+  #pragma acc parallel loop
+  for(int i=0;i<nbe;i++)
+  {
+
+    double v(0.);
+    EMAT ;
+
+    int iD = i*D ;
+    int n0 = pT[iD] ;
+    int n0d = n0*d ;
+
+    #pragma acc loop seq
+    for(int j=0;j<d;j++)
+    {
+      int n = pT[iD+j+1] ;
+      int nd = n*d ;
+
+      #pragma acc loop seq
+      for(int k=0;k<d;k++){
+        mat[j][k] = pX[nd+k]-pX[n0d+k];
+      }
+    }
+
+    v = determinant(mat);
+
+    #pragma acc loop seq
+    for(int j(0); j<D; ++j){
+      #pragma acc atomic update
+      pvolNavg[pT[iD+j]] += v ;
+    }
+
+    #pragma acc loop seq
+    for(int j(0); j<D; ++j){
+      #pragma acc atomic update
+      pnbs[pT[iD+j]]++ ;
+    }
+  }
+
+  #pragma acc data present(pvolNavg[:tvolNavg], pnbs[:tnbs])
+  #pragma acc parallel loop
+  for(int i(0); i<nbn; ++i){
+    pvolNavg[i] = pvolNavg[i]/pnbs[i] ;
+  }
+
+  #pragma acc exit data delete(pnbs[:tnbs])
 }
 
 
@@ -263,19 +389,15 @@ int main(int argc,char**argv)
 
   Mesh m(fname);
 
-  if(lvlOut>1)
+  /* if(lvlOut>1)
   {
     m.print();
     
     if(fname[fname.size()-1]=='t')
       m.write(string(fname)+"b");
-  }
+  } */
 
-
-
-  /* -------------------------------------------
-              computation of volume()
-   ------------------------------------------- */
+  /* ---------computation of volume()--------- */
 
   auto begin = std::chrono::high_resolution_clock::now();  
 
@@ -287,15 +409,61 @@ int main(int argc,char**argv)
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
 
 
-  cout << endl << "Mesh volule() computation:" << endl;
+  cout << endl << "Mesh volume() computation:" << endl;
   cout << "   time: " << elapsed.count()/1000000000.0 << " [s]" << endl;
   cout << "   volume = " << vol << endl;
 
 
 
-  /* -------------------------------------------
-              computation of volumeN()
-   ------------------------------------------- */
+  /* ---------computation of volumesE()--------- */
+
+  vector<double> volE(m.nbe);
+
+  double* pvolE(&volE[0]);
+  size_t tvolE(volE.size());
+
+  #pragma acc enter data create(pvolE[:tvolE])
+
+
+    begin = std::chrono::high_resolution_clock::now();  
+
+    for(int i=0;i<M;i++){
+      m.volumesE(pvolE, tvolE);
+    }
+
+    end = std::chrono::high_resolution_clock::now();
+    elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+
+    cout << endl << "Mesh volumesE() computation:" << endl;
+    cout << "   time: " << elapsed.count()/1000000000.0 << " [s]" << endl;
+
+    #pragma acc update self(pvolE[:tvolE])
+
+    if(lvlOut >= 1){
+      #pragma acc update self(pvolE[:tvolE])
+      switch(lvlOut){
+        case 1:
+          cout << "   data: ";
+          for(auto elem : volE){
+            cout << elem << " ";
+          }
+          cout << endl;
+          break;
+        case 2:
+          ofstream ofs("volE_acc.txt");
+          for(auto elem : volE){
+            ofs << elem << endl;
+          }
+          break;
+      } 
+    }
+
+
+  #pragma acc exit data delete(pvolE[:tvolE])
+
+
+
+  /* ---------computation of volumesN()--------- */
 
   vector<double> volN(m.nbn);
 
@@ -314,24 +482,77 @@ int main(int argc,char**argv)
     end = std::chrono::high_resolution_clock::now();
     elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
 
-    cout << endl << "Mesh voluleN() computation:" << endl;
+    cout << endl << "Mesh volumesN() computation:" << endl;
     cout << "   time: " << elapsed.count()/1000000000.0 << " [s]" << endl;
 
-    if(lvlOut == 1){
+    if(lvlOut >= 1){
       #pragma acc update self(pvolN[:tvolN])
-      for(auto elem : volN){
-        cout << elem << " ";
-      }
-
-      /* ofstream ofs("out.txt");
-      for(auto elem : volN){
-        ofs << elem << endl;
-      }  */   
+      switch(lvlOut){
+        case 1:
+          cout << "   data: ";
+          for(auto elem : volN){
+            cout << elem << " ";
+          }
+          cout << endl;
+          break;
+        case 2:
+          ofstream ofs("volN_acc.txt");
+          for(auto elem : volN){
+            ofs << elem << endl;
+          } 
+        break;
+      }  
     }
 
 
   #pragma acc exit data delete(pvolN[:tvolN])
-  
+
+
+
+  /* ---------computation of volumesNavg()--------- */
+
+  vector<double> volNavg(m.nbn);
+
+  double* pvolNavg(&volNavg[0]);
+  size_t tvolNavg(volNavg.size());
+
+  #pragma acc enter data create(pvolNavg[:tvolNavg])
+
+
+    begin = std::chrono::high_resolution_clock::now();  
+
+    for(int i=0;i<M;i++){
+      m.volumesNavg(pvolNavg, tvolNavg);
+    }
+
+    end = std::chrono::high_resolution_clock::now();
+    elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+
+    cout << endl << "Mesh volumesNavg() computation: " << endl;
+    cout << "   time: " << elapsed.count()/1000000000.0 << " [s]" << endl;
+
+    if(lvlOut >= 1){
+      #pragma acc update self(pvolNavg[:tvolNavg])
+      switch(lvlOut){
+        case 1:
+          cout << "   data: ";
+          for(auto elem : volNavg){
+            cout << elem << " ";
+          }
+          cout << endl;
+          break;
+        case 2:
+          ofstream ofs("volNavg_acc.txt");
+          for(auto elem : volNavg){
+            ofs << elem << endl;
+          } 
+        break;
+      }  
+    }
+
+
+  #pragma acc exit data delete(pvolNavg[:tvolNavg])
+
 
   cout << endl << "completed." << endl;
   return 0 ;
