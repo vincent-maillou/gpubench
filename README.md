@@ -10,7 +10,7 @@ applications to GPU and hybrid technologies.
 NOTES:
 Compilation Kokkos sur Liger dans le module singularity
 -  salloc -p gpus -w turing03
--  singularity shell
+-  module load singularity
 -  singularity shell --nv ../jupyter-nvhpc20.9_latest.sif 
 -  export CMAKE=/install/cmake-3.22.1-linux-x86_64/bin/cmake
 -  $CMAKE -DCMAKE_CXX_EXTENSIONS=Off ..
