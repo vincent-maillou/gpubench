@@ -197,7 +197,7 @@ void Mesh::volumesE(double* pvolE, size_t tvolE)
   for(int i=0;i<nbe;i++)
   {
 
-    double v ;
+    double v(0.0);
     EMAT ;
 
     int iD = i*D ;
@@ -396,6 +396,8 @@ int main(int argc,char**argv)
     if(fname[fname.size()-1]=='t')
       m.write(string(fname)+"b");
   } */
+
+
 
   /* ---------computation of volume()--------- */
 
