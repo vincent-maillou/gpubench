@@ -309,7 +309,7 @@ struct VolumesNavg : public Utils{
    ------------------------------------------- */
 
 template<class ExecutionSpace>
-struct Avg : public Utils{
+struct Avg{
 
    typedef ExecutionSpace execution_space;
 
