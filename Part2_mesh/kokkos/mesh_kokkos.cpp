@@ -16,13 +16,13 @@ using namespace std ;
   - Vérifier exactitude volume 2D [x]
   - Vérifier exactitude volume 3D [x]
 
-  - Implémenter volN []
+  - Implémenter volN [x]
   - Vérifier exactitude volE 2D []
-  - Vérifier exactitude volE 3D []
+  - Vérifier exactitude volE 3D [x]
 
-  - Implémenter volE []
-  - Vérifier exactitude volE 2D []
-  - Vérifier exactitude volE 3D []
+  - Implémenter volE [x]
+  - Vérifier exactitude volE 2D [x]
+  - Vérifier exactitude volE 3D [x]
 
   - Implémenter volNAverage []
   - Vérifier exactitude volNAverage 2D []
@@ -41,6 +41,8 @@ public :
 
   double volume();
   void volumesE(view_type_double volE);
+  void volumesN(view_type_double volN);
+  void volumesNavg(view_type_double volNavg);
 
   int d,D; 
   int nbn,nbe;
@@ -174,6 +176,33 @@ void Mesh::volumesE(view_type_double volE)
 
 
 /* -------------------------------------------
+                  MESH::volumesN()
+   ------------------------------------------- */
+
+void Mesh::volumesN(view_type_double volN)
+{
+  Kokkos::parallel_for(nbe, VolumesN<view_type_double::execution_space>(X_dv, T_dv, volN, d, D, OneOverFact[d]));
+  Kokkos::fence();
+}
+
+
+
+/* -------------------------------------------
+                  MESH::volumesNavg()
+   ------------------------------------------- */
+
+void Mesh::volumesNavg(view_type_double volNavg)
+{
+  view_type_integer pnbs ("pnbs vector", nbn); 
+
+  Kokkos::parallel_for(nbe, VolumesNavg<view_type_double::execution_space>(X_dv, T_dv, volNavg, pnbs, d, D, OneOverFact[d]));
+  Kokkos::parallel_for(nbn, Avg<view_type_double::execution_space>(volNavg, pnbs));
+  Kokkos::fence();
+}
+
+
+
+/* -------------------------------------------
                   MAIN
    ------------------------------------------- */
 
@@ -264,6 +293,79 @@ int main(int argc,char**argv)
       } 
     }
 
+
+
+    /* ---------computation of volumesN()--------- */
+
+    view_type_double volN ("volN vector", m.nbn); 
+
+    begin = std::chrono::high_resolution_clock::now();  
+
+      for(int i=0;i<M;i++)
+        m.volumesN(volN) ;
+
+    end = std::chrono::high_resolution_clock::now();
+    elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+
+    cout << endl << "Mesh volumesN() computation:" << endl;
+    cout << "   time: " << elapsed.count()/1000000000.0 << " [s]" << endl;
+
+    if(lvlOut >= 1){
+      volN.sync<view_type_double::host_mirror_space> ();
+      
+      switch(lvlOut){
+        case 1:
+          cout << "   data: ";
+          for(view_type_double::size_type i(0); i < volN.extent(0); ++i){
+            cout << volN.h_view(i) << " ";
+          }
+          cout << endl;
+          break;
+        case 2:
+          ofstream ofs("volN_kokkos.txt");
+          for(view_type_double::size_type i(0); i < volN.extent(0); ++i){
+            ofs << volN.h_view(i) << std::endl;
+          }
+          break;
+      } 
+    }
+
+
+
+    /* ---------computation of volumesNavg()--------- */
+
+    view_type_double volNavg ("volNavg vector", m.nbn); 
+
+    begin = std::chrono::high_resolution_clock::now();  
+
+      for(int i=0;i<M;i++)
+        m.volumesNavg(volNavg) ;
+
+    end = std::chrono::high_resolution_clock::now();
+    elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+
+    cout << endl << "Mesh volumesNavg() computation:" << endl;
+    cout << "   time: " << elapsed.count()/1000000000.0 << " [s]" << endl;
+
+    if(lvlOut >= 1){
+      volNavg.sync<view_type_double::host_mirror_space> ();
+      
+      switch(lvlOut){
+        case 1:
+          cout << "   data: ";
+          for(view_type_double::size_type i(0); i < volNavg.extent(0); ++i){
+            cout << volNavg.h_view(i) << " ";
+          }
+          cout << endl;
+          break;
+        case 2:
+          ofstream ofs("volNavg_kokkos.txt");
+          for(view_type_double::size_type i(0); i < volNavg.extent(0); ++i){
+            ofs << volNavg.h_view(i) << std::endl;
+          }
+          break;
+      } 
+    }
 
 
     cout << endl << "completed." << endl;
