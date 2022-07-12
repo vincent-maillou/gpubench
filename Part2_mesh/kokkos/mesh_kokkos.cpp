@@ -13,7 +13,7 @@ using namespace std ;
 
 /* TODO
   - Implémenter volume [x]
-  - Vérifier exactitude volume 2D []
+  - Vérifier exactitude volume 2D [x]
   - Vérifier exactitude volume 3D [x]
 
   - Implémenter volN []
@@ -40,10 +40,7 @@ public :
   void read(const string & fname);
 
   double volume();
-
-  double determinant(double mat) const;
-  double determinant(double mat[2][2]) const;
-  double determinant(double mat[3][3]) const;
+  void volumesE(view_type_double volE);
 
   int d,D; 
   int nbn,nbe;
@@ -165,19 +162,13 @@ double Mesh::volume()
 
 
 /* -------------------------------------------
-                  MESH::utilities
+                  MESH::volumesE()
    ------------------------------------------- */
 
-double Mesh::determinant(double mat) const{
-  return OneOverFact[1]*mat;
-}
-
-double Mesh::determinant(double mat[2][2]) const{
-  return OneOverFact[2]*(mat[0][0]*mat[1][1]-mat[0][1]*mat[1][0]);
-}
-
-double Mesh::determinant(double mat[3][3]) const{
-  return OneOverFact[3]*(mat[0][0]*mat[1][1]*mat[2][2] + mat[0][1]*mat[1][2]*mat[2][0] + mat[0][2]*mat[1][0]*mat[2][1] - mat[0][2]*mat[1][1]*mat[2][0] - mat[0][1]*mat[1][0]*mat[2][2] - mat[0][0]*mat[1][2]*mat[2][1]);
+void Mesh::volumesE(view_type_double volE)
+{
+  Kokkos::parallel_for(nbe, VolumesE<view_type_double::execution_space>(X_dv, T_dv, volE, d, D, OneOverFact[d]));
+  Kokkos::fence();
 }
 
 
@@ -235,6 +226,45 @@ int main(int argc,char**argv)
     cout << endl << "Mesh volume() computation:" << endl;
     cout << "   time: " << elapsed.count()/1000000000.0 << " [s]" << endl;
     cout << "   volume = " << vol << endl;
+
+
+
+    /* ---------computation of volumesE()--------- */
+
+    view_type_double volE ("volE vector", m.nbe); 
+
+    begin = std::chrono::high_resolution_clock::now();  
+
+      for(int i=0;i<M;i++)
+        m.volumesE(volE) ;
+
+    end = std::chrono::high_resolution_clock::now();
+    elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
+
+    cout << endl << "Mesh volumesE() computation:" << endl;
+    cout << "   time: " << elapsed.count()/1000000000.0 << " [s]" << endl;
+
+    if(lvlOut >= 1){
+      volE.sync<view_type_double::host_mirror_space> ();
+      
+      switch(lvlOut){
+        case 1:
+          cout << "   data: ";
+          for(view_type_double::size_type i(0); i < volE.extent(0); ++i){
+            cout << volE.h_view(i) << " ";
+          }
+          cout << endl;
+          break;
+        case 2:
+          ofstream ofs("volE_kokkos.txt");
+          for(view_type_double::size_type i(0); i < volE.extent(0); ++i){
+            ofs << volE.h_view(i) << std::endl;
+          }
+          break;
+      } 
+    }
+
+
 
     cout << endl << "completed." << endl;
   }
