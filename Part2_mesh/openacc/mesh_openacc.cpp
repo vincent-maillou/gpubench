@@ -9,8 +9,8 @@
 
 using namespace std ;
 
-#define EMAT double mat[3][3] // Cas 3D
-// #define EMAT double mat[2][2]
+// #define EMAT double mat[3][3] // Cas 3D
+#define EMAT double mat[2][2]
 
 /* TODO
   - Implémenter volN [x]
