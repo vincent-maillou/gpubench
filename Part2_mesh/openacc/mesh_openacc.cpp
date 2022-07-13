@@ -9,23 +9,8 @@
 
 using namespace std ;
 
-// #define EMAT double mat[3][3] // Cas 3D
-#define EMAT double mat[2][2]
-
-/* TODO
-  - Implémenter volN [x]
-  - Vérifier volN pas cassé 2D [x]
-  - Vérifier volN pas cassé 3D [x]
-
-  - Implémenter volE [x]
-  - Vérifier exactitude volE 2D [x]
-  - Vérifier exactitude volE 3D [x]
-
-  - Implémenter volNAverage [x]
-  - Vérifier exactitude volNAverage 2D [x]
-  - Vérifier exactitude volNAverage 3D [x]  
-
- */
+#define EMAT double mat[3][3] // Cas 3D
+// #define EMAT double mat[2][2]
 
 class Mesh
 {

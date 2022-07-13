@@ -11,24 +11,6 @@
 
 using namespace std ;
 
-/* TODO
-  - Implémenter volume [x]
-  - Vérifier exactitude volume 2D [x]
-  - Vérifier exactitude volume 3D [x]
-
-  - Implémenter volN [x]
-  - Vérifier exactitude volE 2D []
-  - Vérifier exactitude volE 3D [x]
-
-  - Implémenter volE [x]
-  - Vérifier exactitude volE 2D [x]
-  - Vérifier exactitude volE 3D [x]
-
-  - Implémenter volNAverage []
-  - Vérifier exactitude volNAverage 2D []
-  - Vérifier exactitude volNAverage 3D []  
-*/
-
 class Mesh
 {
 public :
