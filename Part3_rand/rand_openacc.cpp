@@ -4,6 +4,8 @@
 #include <cmath>
 #include <chrono>
 
+#include "curand.h"
+
 using namespace std ;
 
 
@@ -14,8 +16,7 @@ using namespace std ;
 
 
   2. How to generate random number in parallel on the GPU
-    - Using random number generator require to compile with: "nollvm"
-    - -acc -ta=tesla:nollvm -Mcudalib=curand
+    To Compile: nvc++ -fast -acc=gpu -cudalib=curand -o trand6.exe trand6.cpp
 
     cuRAND: https://docs.nvidia.com/cuda/curand/introduction.html#introduction
     CPU-side generation: /include/curand.h
@@ -23,6 +24,11 @@ using namespace std ;
 
     /opt/nvidia/hpc_sdk/Linux_x86_64/22.2/math_libs/include/curand_kernel.h
     For exemples: /opt/nvidia/hpc_sdk/Linux_x86_64/22.2/examples/CUDA-Libraries/cuRAND
+
+    Examples intéréssants:
+      make cpp_test6       : OpenACC C++ with host calls
+      make cpp_test7       : OpenACC C++ calls within data regions
+      make cpp_test8       : OpenACC C++ calls in compute regions
 */
 
 
@@ -56,26 +62,24 @@ int main(int argc,char**argv)
       lvlOut = stoi(argv[i+1]);
   } 
 
-  random_device rd;
-  mt19937 mt(rd());
-  uniform_real_distribution<double> dist(0.0,1.0); //range is 20 to 22
+  curandGenerator_t cuGen;
 
-  vector<double> X(N);
+  // Create the random generator on the host and set the seed
+  curandCreateGeneratorHost(&cuGen, CURAND_RNG_PSEUDO_DEFAULT);
+  curandSetPseudoRandomGeneratorSeed(cuGen, time(NULL));
+
+  vector<float> X(N);
   X.reserve(marge*N);
 
-  for(int i=0;i<N;i++)
-    X[i] = dist(mt);
+  // Generate the uniform distribution and fill X vector
+  curandGenerateUniform(cuGen, &X[0], X.size());
 
   cout << "X (" << X.size() << ")" << endl;
-  if(lvlOut>0){
+  if(lvlOut == 1){
     for(const auto & v : X)
       cout << v << " ";
     cout << endl;
   }
-
-  double *restrict pX( &X[0] ); 
-  size_t tX( X.size() );
-  #pragma acc enter data copyin(pX[:tX])
 
 
 
@@ -89,10 +93,12 @@ int main(int argc,char**argv)
       X.shrink_to_fit();
       X.reserve(marge*N);
 
-      // #pragma acc data present(pX[:tX])
       for(int i=0;i<X.size();i++){
-        if(X[i]>limit)
-          X.push_back(dist(mt));
+        if(X[i]>limit){
+          float temp(0.);
+          curandGenerateUniform(cuGen, &temp, 1);
+          X.push_back(temp);
+        }
       }
     }
 
@@ -102,14 +108,23 @@ int main(int argc,char**argv)
   cout << "X (" << X.size() << ")" << endl;
   cout << "   time: " << elapsed.count()/1000000000.0 << " [s]" << endl;
 
-  if(lvlOut>0){
-    #pragma acc update self(pX[:tX])
+  if(lvlOut == 1){
     for(const auto & v : X)
       cout << v << " ";
     cout << endl;
   }
+  else if(lvlOut == 2){
+    double means(0.);
+    for(const auto & v : X){
+      means += v;
+    }
+    means /= X.size();
+    cout << "Uniforme distribution around: " << means << endl;
+  }
 
-  #pragma acc exit data delete(pX[:tX])
+  // Destroy the random generator
+  curandDestroyGenerator(cuGen);
+
 
 
   cout << "completed." << endl;

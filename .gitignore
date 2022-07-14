@@ -7,3 +7,4 @@ Part2_mesh/meshs/mesh_complexes/*.t
 # Part2_mesh/*
 *.code-workspace
 *.txt
+Part3_rand/test_rand_oacc_cpp/
