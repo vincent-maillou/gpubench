@@ -70,7 +70,7 @@ using namespace std ;
     size_t reservedSpace;
 }; */
 
-void resizeOnGPU(float * pCont, size_t tCont, size_t & capCont, int marge){
+void resizeOnGPU(float * pCont, size_t tCont /* Actual size */, size_t & capCont /* Reserved capacity */, int marge){
   float * pTemp = new float[tCont*marge];
   size_t capTemp = tCont*marge;
 
@@ -165,6 +165,7 @@ int main(int argc,char**argv)
 
     if(pX[i] > limit){
       pX[tX + i] = i;
+      pushedBack++;
     }
   }
 

@@ -211,7 +211,7 @@ void Mesh::volumesN(vector<double> & volN)
       }
       v = fac*mat.determinant();
       for(int j=0;j<D;j++)
-        #pragma omp critical 
+        #pragma omp atomic 
         volN[T[iD+j]] += v ;
     }
   }
@@ -247,10 +247,10 @@ void Mesh::volumesNavg(vector<double> & volN)
       }
       v = fac*mat.determinant();
       for(int j=0;j<D;j++)
-        #pragma omp critical 
+        #pragma omp atomic 
         volN[T[iD+j]] += v ;
       for(int j=0;j<D;j++)
-        #pragma omp critical 
+        #pragma omp atomic 
         nbs[T[iD+j]]++ ;
     }
 
