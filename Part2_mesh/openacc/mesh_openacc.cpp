@@ -4,7 +4,6 @@
 #include <cmath>
 #include <string>
 #include <fstream>
-#include <ctime>
 #include <chrono>
 
 using namespace std ;
@@ -196,8 +195,9 @@ void Mesh::volumesE(double* pvolE, size_t tvolE)
       int nd = n*d;
 
       #pragma acc loop seq
-      for(int k(0); k<d; ++k)
+      for(int k(0); k<d; ++k){
         mat[j][k] = pX[nd+k]-pX[n0d+k];
+      }
     }
 
     v = determinant(mat);
@@ -347,6 +347,7 @@ double Mesh::determinant(double mat[2][2]) const{
 double Mesh::determinant(double mat[3][3]) const{
   return OneOverFact[3]*(mat[0][0]*mat[1][1]*mat[2][2] + mat[0][1]*mat[1][2]*mat[2][0] + mat[0][2]*mat[1][0]*mat[2][1] - mat[0][2]*mat[1][1]*mat[2][0] - mat[0][1]*mat[1][0]*mat[2][2] - mat[0][0]*mat[1][2]*mat[2][1]);
 }
+
 
 
 /* -------------------------------------------
